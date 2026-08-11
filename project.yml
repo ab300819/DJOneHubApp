@@ -1,0 +1,32 @@
+name: DJOneHub
+
+options:
+  bundleIdPrefix: com.ab300819
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "13.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Ad-hoc signing matches how the Go release is signed today; the app spawns
+    # the core as a child process, so it must not be sandboxed.
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGNING_REQUIRED: "NO"
+    ENABLE_HARDENED_RUNTIME: "NO"
+
+targets:
+  DJOneHub:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ab300819.DJOneHub
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        GENERATE_INFOPLIST_FILE: "YES"

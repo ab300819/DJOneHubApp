@@ -1,0 +1,13 @@
+.DS_Store
+._*
+
+# Generated from project.yml by XcodeGen
+DJOneHub.xcodeproj/
+
+# Build outputs
+build/
+DerivedData/
+
+# Xcode user state
+*.xcuserdatad
+xcuserdata/
