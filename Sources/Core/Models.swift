@@ -17,7 +17,48 @@ struct Health: Codable, Sendable {
     }
 }
 
-/// Mirrors `GET /api/status`.
+/// The core reports one of two shapes: a full status when an AT channel
+/// answered, or what little is known from the USB inventory when none did.
+enum StatusResult: Decodable, Sendable {
+    case device(ModemStatus)
+    case degraded(DegradedStatus)
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, device, degraded
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(String.self, forKey: .kind) {
+        case "device":
+            self = .device(try container.decode(ModemStatus.self, forKey: .device))
+        case "degraded":
+            self = .degraded(try container.decode(DegradedStatus.self, forKey: .degraded))
+        case let other:
+            throw DecodingError.dataCorruptedError(
+                forKey: .kind, in: container, debugDescription: "未知的状态类型 \(other)")
+        }
+    }
+}
+
+/// What the core can report with no AT channel available.
+struct DegradedStatus: Decodable, Sendable {
+    let operatorName: String
+    let networkMode: String
+    let simInserted: Bool
+    let hardwareStatus: String
+    let discoveryError: String
+
+    enum CodingKeys: String, CodingKey {
+        case operatorName = "operator"
+        case networkMode = "network_mode"
+        case simInserted = "sim_inserted"
+        case hardwareStatus = "hardware_status"
+        case discoveryError = "discovery_error"
+    }
+}
+
+/// A full modem status, reported when an AT channel answered.
 struct ModemStatus: Codable, Sendable {
     let imei: String
     let firmware: String

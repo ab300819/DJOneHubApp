@@ -1,6 +1,6 @@
 import Foundation
 
-/// Owns the core process lifetime and the polled modem state.
+/// Owns the transport's lifetime and the polled modem state.
 @MainActor
 final class AppModel: ObservableObject {
     enum Phase: Equatable {
@@ -11,11 +11,10 @@ final class AppModel: ObservableObject {
 
     @Published private(set) var phase: Phase = .starting
     @Published private(set) var health: Health?
-    @Published private(set) var status: ModemStatus?
+    @Published private(set) var status: StatusResult?
     @Published private(set) var lastError: String?
 
-    private var core: CoreProcess?
-    private var transport: ModemTransport?
+    private var transport: StdioTransport?
     private var pollTask: Task<Void, Never>?
 
     /// Set `DJONEHUB_DEMO=1` to run the core against simulated data, which is
@@ -25,15 +24,13 @@ final class AppModel: ObservableObject {
     }
 
     func start() async {
-        guard let executable = CoreProcess.locateExecutable() else {
+        guard let executable = CoreLocator.find() else {
             phase = .failed("找不到 djonehub-macos 核心程序。开发时可设置 DJONEHUB_CORE 指向它。")
             return
         }
         do {
-            let core = try CoreProcess(executable: executable, demo: demoRequested)
-            try core.start()
-            let transport = HTTPTransport(baseURL: core.baseURL)
-            self.core = core
+            let transport = StdioTransport(executable: executable, demo: demoRequested)
+            try transport.start()
             self.transport = transport
 
             health = try await transport.waitUntilReady()
@@ -47,7 +44,7 @@ final class AppModel: ObservableObject {
     func stop() {
         pollTask?.cancel()
         pollTask = nil
-        core?.stop()
+        transport?.stop()
     }
 
     private func startPolling() {

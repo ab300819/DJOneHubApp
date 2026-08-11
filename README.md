@@ -15,17 +15,20 @@
    SwiftUI 界面
         │  ModemTransport 协议
         ▼
-   HTTPTransport ──────► DJOneHub 核心（子进程）──libusb── 4G 模块
+   StdioTransport ──管道──► DJOneHub 核心（子进程，-stdio）──libusb── 4G 模块
 ```
 
-App 启动时把核心作为子进程拉起，端口向内核申请而非写死，因此不会与你手动运行的
-`djonehub` 抢占默认的 7575。
+App 把核心作为子进程拉起，通过它自己的 stdin/stdout 交换行分隔 JSON。
 
-界面代码只依赖 `ModemTransport` 协议，目前仅有 HTTP 一个实现。这是刻意留下的接缝：
-若将来 iPad 直连方案成立，只需新增一个基于 DriverKit 的实现，视图层无需改动。
+**不监听任何端口。** 这一点是刻意的：核心的 HTTP API 没有任何鉴权，若开在 TCP 端口上，
+本机任意进程都能发送任意 AT 指令或删除 eSIM Profile。网页界面受浏览器限制只能走 HTTP，
+原生 App 没有理由继承这个约束。
 
-核心进程通过 `-parent-pid` 感知父进程消失后自行退出，所以 App 崩溃或被强制退出时
-不会遗留占用 USB 接口的孤儿进程。
+生命周期也因此免费获得：App 一旦退出——包括崩溃和被强制退出——管道写端关闭，
+核心读到 EOF 后自行结束，不会遗留占用 USB 接口的孤儿进程。
+
+界面代码只依赖 `ModemTransport` 协议。这是刻意留下的接缝：iOS 禁止 App 派生子进程，
+所以 iPad 版无法复用当前实现，届时需要新增一个基于 DriverKit 的传输层，但视图层不必改动。
 
 ## 构建与运行
 
