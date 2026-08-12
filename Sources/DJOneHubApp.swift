@@ -7,7 +7,7 @@ struct DJOneHubApp: App {
 
     var body: some Scene {
         WindowGroup("DJOneHub") {
-            StatusView()
+            RootView()
                 .environmentObject(model)
                 .task {
                     delegate.model = model

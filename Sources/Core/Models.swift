@@ -1,5 +1,54 @@
 import Foundation
 
+/// One message read from the module.
+struct ReceivedSMS: Decodable, Sendable, Identifiable {
+    let sender: String
+    let content: String
+    let code: String?
+    let timestamp: Date
+
+    /// The core has no message identifier, so rows are keyed by the fields that
+    /// together make a message unique in practice.
+    var id: String { "\(timestamp.timeIntervalSince1970)-\(sender)-\(content.hashValue)" }
+}
+
+/// The state of the background polling that feeds the inbox.
+struct SMSStatus: Decodable, Sendable {
+    let count: Int
+    let polling: Bool
+    let pollIntervalS: Int
+    let autoCleanupME: Bool
+    let lastPollError: String
+
+    enum CodingKeys: String, CodingKey {
+        case count, polling
+        case pollIntervalS = "poll_interval_s"
+        case autoCleanupME = "auto_cleanup_me"
+        case lastPollError = "last_poll_error"
+    }
+}
+
+/// Reports that a refresh was accepted; `count` is present only when it
+/// completed synchronously.
+struct RefreshResult: Decodable, Sendable {
+    let accepted: Bool
+    let count: Int?
+}
+
+/// The module store sizes around a cleanup.
+struct ClearResult: Decodable, Sendable {
+    let cleared: Bool
+    let memory: String?
+    let before: Int
+    let after: Int
+}
+
+/// A successful send, and how many segments it took.
+struct SendResult: Decodable, Sendable {
+    let sent: Bool
+    let segments: Int
+}
+
 /// Mirrors `GET /api/health`.
 struct Health: Codable, Sendable {
     let ok: Bool

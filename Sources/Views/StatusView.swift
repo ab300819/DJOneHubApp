@@ -5,39 +5,28 @@ struct StatusView: View {
 
     var body: some View {
         Group {
-            switch model.phase {
-            case .starting:
-                Placeholder(text: "正在启动 DJOneHub 核心…")
-            case let .failed(message):
-                FailureView(message: message)
-            case .ready:
-                content
+            switch model.status {
+            case let .device(status):
+                deviceForm(status)
+            case let .degraded(status):
+                DegradedView(status: status)
+            case nil:
+                ProgressView("正在读取模块状态…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(minWidth: 460, minHeight: 420)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch model.status {
-        case let .device(status):
-            deviceForm(status)
-                .overlay(alignment: .bottom) { errorBanner }
-        case let .degraded(status):
-            DegradedView(status: status)
-                .overlay(alignment: .bottom) { errorBanner }
-        case nil:
-            Placeholder(text: "正在读取模块状态…")
-        }
-    }
-
-    @ViewBuilder
-    private var errorBanner: some View {
-        if let error = model.lastError {
-            Text(error)
-                .font(.callout)
-                .foregroundStyle(.red)
-                .padding(8)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let error = model.lastError {
+                HStack {
+                    Text(error)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.bar)
+            }
         }
     }
 
@@ -89,35 +78,5 @@ private struct DegradedView: View {
             }
         }
         .formStyle(.grouped)
-    }
-}
-
-private struct Placeholder: View {
-    let text: String
-
-    var body: some View {
-        ProgressView(text)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private struct FailureView: View {
-    let message: String
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.largeTitle)
-                .foregroundStyle(.orange)
-            Text("核心未能启动")
-                .font(.headline)
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .textSelection(.enabled)
-        }
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

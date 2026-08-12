@@ -11,6 +11,12 @@ protocol ModemTransport: Sendable {
     func health() async throws -> Health
     func status() async throws -> StatusResult
     func executeAT(_ command: String) async throws -> String
+
+    func listSMS() async throws -> [ReceivedSMS]
+    func smsStatus() async throws -> SMSStatus
+    func refreshSMS() async throws -> RefreshResult
+    func clearModuleSMS() async throws -> ClearResult
+    func sendSMS(phone: String, message: String) async throws -> SendResult
 }
 
 extension ModemTransport {

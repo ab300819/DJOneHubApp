@@ -14,7 +14,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var status: StatusResult?
     @Published private(set) var lastError: String?
 
-    private var transport: StdioTransport?
+    /// Exposed as the protocol rather than the concrete type so pages keep
+    /// depending only on the seam an iPad build would reimplement.
+    private(set) var transport: (any ModemTransport)?
+
+    private var core: StdioTransport?
     private var pollTask: Task<Void, Never>?
 
     /// Set `DJONEHUB_DEMO=1` to run the core against simulated data, which is
@@ -31,6 +35,7 @@ final class AppModel: ObservableObject {
         do {
             let transport = StdioTransport(executable: executable, demo: demoRequested)
             try transport.start()
+            core = transport
             self.transport = transport
 
             health = try await transport.waitUntilReady()
@@ -44,7 +49,7 @@ final class AppModel: ObservableObject {
     func stop() {
         pollTask?.cancel()
         pollTask = nil
-        transport?.stop()
+        core?.stop()
     }
 
     private func startPolling() {
