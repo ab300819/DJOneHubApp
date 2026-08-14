@@ -26,7 +26,7 @@ enum Page: String, CaseIterable, Identifiable {
 }
 
 struct RootView: View {
-    @EnvironmentObject private var model: AppModel
+    @Environment(AppModel.self) private var model
     @State private var selection: Page = .status
 
     var body: some View {

@@ -2,17 +2,27 @@ import SwiftUI
 
 @main
 struct DJOneHubApp: App {
-    @StateObject private var model = AppModel()
+    @State private var model = AppModel()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
         WindowGroup("DJOneHub") {
             RootView()
-                .environmentObject(model)
+                .environment(model)
                 .task {
                     delegate.model = model
                     await model.start()
                 }
+        }
+        .defaultSize(width: 900, height: 560)
+        .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(after: .toolbar) {
+                Button("刷新模块状态") {
+                    Task { await model.refresh() }
+                }
+                .keyboardShortcut("r", modifiers: .command)
+            }
         }
     }
 }

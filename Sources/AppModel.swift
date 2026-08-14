@@ -1,25 +1,27 @@
 import Foundation
+import Observation
 
 /// Owns the transport's lifetime and the polled modem state.
+@Observable
 @MainActor
-final class AppModel: ObservableObject {
+final class AppModel {
     enum Phase: Equatable {
         case starting
         case ready
         case failed(String)
     }
 
-    @Published private(set) var phase: Phase = .starting
-    @Published private(set) var health: Health?
-    @Published private(set) var status: StatusResult?
-    @Published private(set) var lastError: String?
+    private(set) var phase: Phase = .starting
+    private(set) var health: Health?
+    private(set) var status: StatusResult?
+    private(set) var lastError: String?
 
     /// Exposed as the protocol rather than the concrete type so pages keep
     /// depending only on the seam an iPad build would reimplement.
     private(set) var transport: (any ModemTransport)?
 
-    private var core: StdioTransport?
-    private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var core: StdioTransport?
+    @ObservationIgnored private var pollTask: Task<Void, Never>?
 
     /// Set `DJONEHUB_DEMO=1` to run the core against simulated data, which is
     /// how the UI can be developed without the module attached.
@@ -50,6 +52,10 @@ final class AppModel: ObservableObject {
         pollTask?.cancel()
         pollTask = nil
         core?.stop()
+        core = nil
+        // Cleared so a page that outlives the core fails with a clear "not
+        // running" state rather than calling into a dead pipe.
+        transport = nil
     }
 
     private func startPolling() {
@@ -57,7 +63,7 @@ final class AppModel: ObservableObject {
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(for: .seconds(3))
             }
         }
     }

@@ -7,13 +7,13 @@ import SwiftUI
 /// deliberately plain: no command builder, because guessing at intent here
 /// would be worse than showing exactly what was sent and what came back.
 struct ATConsoleView: View {
-    @EnvironmentObject private var model: AppModel
+    @Environment(AppModel.self) private var model
 
     @State private var command = ""
     @State private var entries: [Entry] = []
     @State private var sending = false
 
-    struct Entry: Identifiable {
+    fileprivate struct Entry: Identifiable {
         let id = UUID()
         let command: String
         let response: String
@@ -62,7 +62,7 @@ struct ATConsoleView: View {
                 }
                 .padding(16)
             }
-            .onChange(of: entries.count) { _ in
+            .onChange(of: entries.count) {
                 if let last = entries.last {
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }

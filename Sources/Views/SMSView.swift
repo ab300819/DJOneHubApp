@@ -1,19 +1,28 @@
 import SwiftUI
 
 struct SMSView: View {
-    @EnvironmentObject private var model: AppModel
+    @Environment(AppModel.self) private var model
 
     @State private var messages: [ReceivedSMS] = []
     @State private var status: SMSStatus?
     @State private var error: String?
+    @State private var notice: String?
     @State private var busy = false
     @State private var composing = false
     @State private var confirmingClear = false
 
+    /// How often the page re-reads the inbox. The core polls the module on its
+    /// own schedule; without this the status line would promise automatic
+    /// polling while the list only ever changed on an explicit refresh.
+    private static let reloadInterval = Duration.seconds(5)
+
     var body: some View {
         Group {
             if messages.isEmpty {
-                EmptyInbox()
+                ContentUnavailableView(
+                    "没有短信",
+                    systemImage: "tray",
+                    description: Text("收到的短信会出现在这里。点刷新可立即向模块查询一次。"))
             } else {
                 List(messages) { message in
                     MessageRow(message: message)
@@ -23,7 +32,12 @@ struct SMSView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .toolbar { toolbar }
-        .task { await reload() }
+        .task {
+            while !Task.isCancelled {
+                await reload()
+                try? await Task.sleep(for: Self.reloadInterval)
+            }
+        }
         .sheet(isPresented: $composing) {
             ComposeSheet { phone, text in
                 await send(phone: phone, message: text)
@@ -67,6 +81,8 @@ struct SMSView: View {
     private var footer: some View {
         if let error {
             banner(error, tint: .red)
+        } else if let notice {
+            banner(notice, tint: .secondary)
         } else if let status {
             banner(statusLine(status), tint: .secondary)
         }
@@ -114,6 +130,7 @@ struct SMSView: View {
         busy = true
         defer { busy = false }
         do {
+            notice = nil
             _ = try await transport.refreshSMS()
             await reload()
         } catch {
@@ -127,7 +144,8 @@ struct SMSView: View {
         defer { busy = false }
         do {
             let result = try await transport.sendSMS(phone: phone, message: message)
-            error = result.segments > 1 ? "已发送，分 \(result.segments) 段" : nil
+            error = nil
+            notice = result.segments > 1 ? "已发送，分 \(result.segments) 段" : "已发送"
             await reload()
         } catch {
             self.error = error.localizedDescription
@@ -140,31 +158,12 @@ struct SMSView: View {
         defer { busy = false }
         do {
             let result = try await transport.clearModuleSMS()
-            error = "模块存储已清理：\(result.before) → \(result.after)"
+            error = nil
+            notice = "模块存储已清理：\(result.before) → \(result.after)"
             await reload()
         } catch {
             self.error = error.localizedDescription
         }
-    }
-}
-
-/// Hand-rolled rather than ContentUnavailableView, which needs macOS 14 while
-/// the app still targets 13 to match what the core supports.
-private struct EmptyInbox: View {
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "tray")
-                .font(.system(size: 34))
-                .foregroundStyle(.tertiary)
-            Text("没有短信")
-                .font(.title3.weight(.medium))
-            Text("收到的短信会出现在这里。点刷新可立即向模块查询一次。")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

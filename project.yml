@@ -4,7 +4,7 @@ options:
   bundleIdPrefix: com.ab300819
   createIntermediateGroups: true
   deploymentTarget:
-    macOS: "13.0"
+    macOS: "14.0"
 
 settings:
   base:

@@ -7,9 +7,12 @@ struct ReceivedSMS: Decodable, Sendable, Identifiable {
     let code: String?
     let timestamp: Date
 
-    /// The core has no message identifier, so rows are keyed by the fields that
-    /// together make a message unique in practice.
-    var id: String { "\(timestamp.timeIntervalSince1970)-\(sender)-\(content.hashValue)" }
+    /// The core assigns no message identifier, so identity is the full triple
+    /// that distinguishes one message from another. Hashing the content would
+    /// be shorter but `hashValue` is seeded per process and is not meant to
+    /// carry identity; two messages that only differ past a collision would
+    /// then render as one row.
+    var id: String { "\(timestamp.timeIntervalSince1970)|\(sender)|\(content)" }
 }
 
 /// The state of the background polling that feeds the inbox.
