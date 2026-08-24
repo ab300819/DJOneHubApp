@@ -299,6 +299,9 @@ struct ESIMView: View {
     }
 }
 
+/// The enabled profile cannot be deleted: doing so would leave the module with
+/// no subscription and no way back short of downloading one again. Switch to
+/// another profile first.
 private struct ProfileRow: View {
     let profile: ESIMProfile
     let busy: Bool
@@ -322,6 +325,7 @@ private struct ProfileRow: View {
                 Menu {
                     Button("重命名…", action: onRename)
                     Button("删除…", role: .destructive, action: onDelete)
+                        .disabled(profile.isEnabled)
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }

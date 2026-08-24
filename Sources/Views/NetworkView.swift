@@ -14,6 +14,10 @@ struct NetworkView: View {
     @State private var proxyCheck: NetworkCheckResult?
     @State private var busy = false
     @State private var error: String?
+    @State private var notice: String?
+
+    @State private var pendingMode: Int?
+    @State private var confirmingReboot = false
 
     /// The counters and the flow list both move on their own, so the page keeps
     /// itself current rather than waiting to be revisited.
@@ -25,13 +29,38 @@ struct NetworkView: View {
             trafficSection
             activitySection
             checkSection
+            usbnetSection
             moduleSection
         }
         .formStyle(.grouped)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let error {
                 MessageBar(text: error, tint: .red)
+            } else if let notice {
+                MessageBar(text: notice, tint: .secondary)
             }
+        }
+        .alert(
+            "切换 USB 网卡模式",
+            isPresented: .init(get: { pendingMode != nil }, set: { if !$0 { pendingMode = nil } })
+        ) {
+            Button("取消", role: .cancel) { pendingMode = nil }
+            Button("继续切换") {
+                if let mode = pendingMode {
+                    pendingMode = nil
+                    Task { await applyUSBNetMode(mode) }
+                }
+            }
+        } message: {
+            Text("将写入 usbnet=\(pendingMode ?? 0)，重启模块后生效。")
+        }
+        .alert("重启模块", isPresented: $confirmingReboot) {
+            Button("取消", role: .cancel) {}
+            Button("确认重启", role: .destructive) {
+                Task { await reboot() }
+            }
+        } message: {
+            Text("模块会重新枚举 USB，连接会短暂中断。")
         }
         .task {
             while !Task.isCancelled {
@@ -124,6 +153,75 @@ struct NetworkView: View {
         }
     }
 
+    /// The module's USB composition decides what it can do at all: mode 0 keeps
+    /// the management channel, mode 1 presents a network interface. Writing it
+    /// only takes effect after the module restarts.
+    @ViewBuilder
+    private var usbnetSection: some View {
+        Section {
+            ForEach(0..<4, id: \.self) { mode in
+                Button {
+                    if mode == currentUSBNetMode {
+                        notice = "当前已是这个模式"
+                    } else {
+                        pendingMode = mode
+                    }
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(Self.usbnetLabel(mode))
+                            Text(Self.usbnetHint(mode))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if mode == currentUSBNetMode {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+            Button(role: .destructive) {
+                confirmingReboot = true
+            } label: {
+                Label("重启模块", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(busy)
+        } header: {
+            Text("USB 网卡模式")
+        } footer: {
+            Text("切换后需要重启模块才会生效。重启会让模块重新枚举 USB。")
+        }
+    }
+
+    /// Read from the status when a full one is available, since it is typed;
+    /// the diagnostic reports the same value as text and covers the case where
+    /// only it succeeded.
+    private var currentUSBNetMode: Int? {
+        if case let .device(status) = model.status { return status.usbnetMode }
+        return diagnostic.flatMap { Int($0.usbnetMode) }
+    }
+
+    private static func usbnetLabel(_ mode: Int) -> String {
+        switch mode {
+        case 0: "短信模式（QMI）"
+        case 1: "上网模式（ECM）"
+        default: "实验模式 \(mode)"
+        }
+    }
+
+    private static func usbnetHint(_ mode: Int) -> String {
+        switch mode {
+        case 0: "保留管理通道，不提供网卡"
+        case 1: "提供网卡，可共享蜂窝网络"
+        default: "高级配置，通常不需要"
+        }
+    }
+
     @ViewBuilder
     private var moduleSection: some View {
         if let diagnostic {
@@ -172,6 +270,45 @@ struct NetworkView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    private func applyUSBNetMode(_ mode: Int) async {
+        guard let transport = model.transport else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let result = try await transport.setUSBNetMode(mode)
+            error = nil
+            notice = result.needsReboot
+                ? "已写入 usbnet=\(result.mode)，重启模块后生效"
+                : "已写入 usbnet=\(result.mode)"
+        } catch {
+            self.error = error.localizedDescription
+            return
+        }
+        await reload()
+    }
+
+    /// The module drops off the bus and comes back, so the reads that follow are
+    /// spaced out rather than issued immediately — an AT command sent mid
+    /// re-enumeration only produces a failure to display.
+    private func reboot() async {
+        guard let transport = model.transport else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            _ = try await transport.rebootModule()
+            error = nil
+            notice = "模块正在重启，等待重新枚举…"
+        } catch {
+            self.error = error.localizedDescription
+            return
+        }
+        try? await Task.sleep(for: .seconds(8))
+        await model.refresh()
+        try? await Task.sleep(for: .seconds(4))
+        await reload()
+        notice = "模块已重新枚举，请确认状态与网络诊断"
     }
 
     private func runChecks() async {
