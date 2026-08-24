@@ -17,6 +17,57 @@ protocol ModemTransport: Sendable {
     func refreshSMS() async throws -> RefreshResult
     func clearModuleSMS() async throws -> ClearResult
     func sendSMS(phone: String, message: String) async throws -> SendResult
+
+    func networkDiagnostic() async throws -> NetworkDiagnostic
+    func networkTraffic() async throws -> TrafficSnapshot
+    func networkLocal() async throws -> LocalConnection?
+    func networkActivity() async throws -> ActivitySnapshot
+    func check4GRoute() async throws -> NetworkCheckResult
+    func checkProxyRoute() async throws -> NetworkCheckResult
+    func setUSBNetMode(_ mode: Int) async throws -> USBNetResult
+    func rebootModule() async throws -> RebootResult
+
+    func esimOverview() async throws -> ESIMOverviewResult
+    func esimHealth() async throws -> ESIMHealthResult
+    func esimSwitch(iccid: String, aid: String?) async throws -> ESIMSwitchResult
+    func esimDelete(iccid: String, aid: String?) async throws -> ESIMActionResult
+    func esimRename(iccid: String, aid: String?, name: String) async throws -> ESIMActionResult
+    func esimDownload(_ request: ESIMDownloadRequest) async throws -> ESIMActionResult
+
+    /// Events the core pushes without being asked, such as eSIM download
+    /// progress. The stream is unbounded in time and finishes when the core
+    /// goes away; a page that only cares while it is on screen should iterate
+    /// it from a task tied to its own lifetime.
+    var events: AsyncStream<CoreEvent> { get }
+}
+
+/// What an SM-DP+ needs to hand over a profile.
+struct ESIMDownloadRequest: Encodable, Sendable {
+    var smdp: String = ""
+    var matchingID: String = ""
+    var confirmationCode: String = ""
+    var aid: String = ""
+    var imei: String = ""
+
+    enum CodingKeys: String, CodingKey {
+        case smdp, aid, imei
+        case matchingID = "matching_id"
+        case confirmationCode = "confirmation_code"
+    }
+}
+
+/// An unsolicited message from the core. Frames carrying no request id are
+/// events rather than answers, which is how the two are told apart on the one
+/// channel they share.
+struct CoreEvent: Decodable, Sendable {
+    let event: String
+    let percent: Int?
+    let message: String?
+}
+
+/// The event names the core emits, matching the constants on its side.
+enum CoreEventName {
+    static let esimDownloadProgress = "esim.download.progress"
 }
 
 extension ModemTransport {

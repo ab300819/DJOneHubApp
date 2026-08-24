@@ -3,6 +3,8 @@ import SwiftUI
 /// The pages the app exposes, in the order they appear in the sidebar.
 enum Page: String, CaseIterable, Identifiable {
     case status
+    case network
+    case esim
     case sms
     case at
 
@@ -11,6 +13,8 @@ enum Page: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .status: "模块状态"
+        case .network: "网络"
+        case .esim: "eSIM"
         case .sms: "短信"
         case .at: "AT 调试"
         }
@@ -19,6 +23,8 @@ enum Page: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .status: "antenna.radiowaves.left.and.right"
+        case .network: "network"
+        case .esim: "simcard.2"
         case .sms: "message"
         case .at: "terminal"
         }
@@ -56,6 +62,8 @@ struct RootView: View {
     private var detail: some View {
         switch selection {
         case .status: StatusView()
+        case .network: NetworkView()
+        case .esim: ESIMView()
         case .sms: SMSView()
         case .at: ATConsoleView()
         }

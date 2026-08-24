@@ -18,7 +18,21 @@ final class StdioTransport: ModemTransport, @unchecked Sendable {
     private var buffer = Data()
     private var terminationReason: String?
 
+    /// Events arrive on the same pipe as the answers and are told apart by
+    /// shape: an answer carries "id", an event carries "event". Until this
+    /// existed the event frames failed to decode as answers and were dropped
+    /// without trace, which is where the eSIM download progress went.
+    let events: AsyncStream<CoreEvent>
+    private let emitEvent: @Sendable (CoreEvent) -> Void
+
     init(executable: URL, demo: Bool) {
+        var send: (@Sendable (CoreEvent) -> Void)!
+        events = AsyncStream { continuation in
+            send = { continuation.yield($0) }
+            continuation.onTermination = { _ in }
+        }
+        emitEvent = send
+
         process.executableURL = executable
         process.arguments = demo ? ["-stdio", "-demo"] : ["-stdio"]
         process.standardInput = toCore
@@ -91,7 +105,78 @@ final class StdioTransport: ModemTransport, @unchecked Sendable {
         return try await call("sms.send", params: Params(phone: phone, message: message))
     }
 
+    func networkDiagnostic() async throws -> NetworkDiagnostic {
+        try await call("network.diagnostic", params: Empty())
+    }
+
+    func networkTraffic() async throws -> TrafficSnapshot {
+        try await call("network.traffic", params: Empty())
+    }
+
+    /// The core answers null when the module has no interface up, which is a
+    /// state rather than a failure.
+    func networkLocal() async throws -> LocalConnection? {
+        try await callOptional("network.local", params: Empty())
+    }
+
+    func networkActivity() async throws -> ActivitySnapshot {
+        try await call("network.activity", params: Empty())
+    }
+
+    func check4GRoute() async throws -> NetworkCheckResult {
+        try await call("network.check4g", params: Empty())
+    }
+
+    func checkProxyRoute() async throws -> NetworkCheckResult {
+        try await call("network.checkProxy", params: Empty())
+    }
+
+    func setUSBNetMode(_ mode: Int) async throws -> USBNetResult {
+        struct Params: Encodable { let mode: Int }
+        return try await call("network.usbnet", params: Params(mode: mode))
+    }
+
+    func rebootModule() async throws -> RebootResult {
+        try await call("network.reboot", params: Empty())
+    }
+
+    func esimOverview() async throws -> ESIMOverviewResult {
+        try await call("esim.overview", params: Empty())
+    }
+
+    func esimHealth() async throws -> ESIMHealthResult {
+        try await call("esim.health", params: Empty())
+    }
+
+    func esimSwitch(iccid: String, aid: String?) async throws -> ESIMSwitchResult {
+        try await call("esim.switch", params: ProfileRef(iccid: iccid, aid: aid ?? ""))
+    }
+
+    func esimDelete(iccid: String, aid: String?) async throws -> ESIMActionResult {
+        try await call("esim.delete", params: ProfileRef(iccid: iccid, aid: aid ?? ""))
+    }
+
+    func esimRename(iccid: String, aid: String?, name: String) async throws -> ESIMActionResult {
+        struct Params: Encodable {
+            let iccid: String
+            let aid: String
+            let name: String
+        }
+        return try await call("esim.rename", params: Params(iccid: iccid, aid: aid ?? "", name: name))
+    }
+
+    func esimDownload(_ request: ESIMDownloadRequest) async throws -> ESIMActionResult {
+        try await call("esim.download", params: request)
+    }
+
     // MARK: - Protocol plumbing
+
+    /// A card can host more than one eUICC application, so a profile is
+    /// identified by its ICCID together with the AID it lives in.
+    private struct ProfileRef: Encodable {
+        let iccid: String
+        let aid: String
+    }
 
     private struct Empty: Encodable {}
 
@@ -101,6 +186,10 @@ final class StdioTransport: ModemTransport, @unchecked Sendable {
     }
 
     private func call<P: Encodable, R: Decodable>(_ method: String, params: P) async throws -> R {
+        try Self.decoder.decode(R.self, from: try await invoke(method, params: params))
+    }
+
+    private func invoke<P: Encodable>(_ method: String, params: P) async throws -> Data {
         let id = lock.withLock { () -> Int in
             let value = nextID
             nextID += 1
@@ -120,7 +209,7 @@ final class StdioTransport: ModemTransport, @unchecked Sendable {
         var line = try JSONSerialization.data(withJSONObject: object)
         line.append(0x0A)
 
-        let payload: Data = try await withCheckedThrowingContinuation { continuation in
+        return try await withCheckedThrowingContinuation { continuation in
             lock.withLock { pending[id] = continuation }
             do {
                 try toCore.fileHandleForWriting.write(contentsOf: line)
@@ -130,6 +219,13 @@ final class StdioTransport: ModemTransport, @unchecked Sendable {
                 }
             }
         }
+    }
+
+    private func callOptional<P: Encodable, R: Decodable>(_ method: String, params: P) async throws
+        -> R?
+    {
+        let payload = try await invoke(method, params: params)
+        if payload.isEmpty || payload == Data("null".utf8) { return nil }
         return try Self.decoder.decode(R.self, from: payload)
     }
 
@@ -178,13 +274,20 @@ final class StdioTransport: ModemTransport, @unchecked Sendable {
 
     private func deliver(_ frame: Data) {
         guard let response = try? JSONDecoder().decode(Response.self, from: frame) else {
+            // No request id: this is something the core said on its own.
+            if let event = try? JSONDecoder().decode(CoreEvent.self, from: frame) {
+                emitEvent(event)
+            }
             return
         }
         guard let waiting = lock.withLock({ pending.removeValue(forKey: response.id) }) else {
             return
         }
-        if response.ok, let result = response.result {
-            waiting.resume(returning: result.data)
+        if response.ok {
+            // A successful call can still answer null — network.local does so
+            // when the module has no interface up. Treating a missing result as
+            // a failure turned that state into an error message.
+            waiting.resume(returning: response.result?.data ?? Data())
         } else {
             waiting.resume(throwing: TransportError.core(response.error ?? "核心返回了失败但没有说明原因"))
         }
