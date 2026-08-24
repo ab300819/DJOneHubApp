@@ -27,6 +27,15 @@ run: build ## 构建并运行（接真实模块）
 demo: build ## 构建并以演示数据运行，无需硬件
 	DJONEHUB_DEMO=1 "$(PRODUCT)/Contents/MacOS/DJOneHub"
 
+.PHONY: test
+test: project ## 跑契约解码测试（IT-011 IT-012）
+	xcodebuild -project DJOneHub.xcodeproj -scheme DJOneHub \
+		-configuration $(CONFIG) -derivedDataPath build test
+
+.PHONY: mutation
+mutation: ## 注入 DTO 漂移，验证测试真的会失败（IT-013）
+	python3 Tests/ContractDecode/mutation-check.py
+
 .PHONY: fmt
 fmt: ## 格式化 Swift 源码（需 swift-format）
 	@command -v swift-format >/dev/null 2>&1 \

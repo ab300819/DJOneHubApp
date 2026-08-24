@@ -200,7 +200,7 @@ final class StdioTransport: ModemTransport, @unchecked Sendable {
     }
 
     private func call<P: Encodable, R: Decodable>(_ method: String, params: P) async throws -> R {
-        try Self.decoder.decode(R.self, from: try await invoke(method, params: params))
+        try CoreJSON.decoder.decode(R.self, from: try await invoke(method, params: params))
     }
 
     private func invoke<P: Encodable>(_ method: String, params: P) async throws -> Data {
@@ -239,29 +239,9 @@ final class StdioTransport: ModemTransport, @unchecked Sendable {
         -> R?
     {
         let payload = try await invoke(method, params: params)
-        if payload.isEmpty || payload == Data("null".utf8) { return nil }
-        return try Self.decoder.decode(R.self, from: payload)
+        if CoreJSON.isAbsent(payload) { return nil }
+        return try CoreJSON.decoder.decode(R.self, from: payload)
     }
-
-    /// Go emits RFC 3339 with fractional seconds, which `.iso8601` rejects, and
-    /// omits them when they happen to be zero — so both spellings must parse.
-    private static let decoder: JSONDecoder = {
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let text = try decoder.singleValueContainer().decode(String.self)
-            if let date = withFraction.date(from: text) ?? plain.date(from: text) {
-                return date
-            }
-            throw DecodingError.dataCorrupted(
-                .init(codingPath: decoder.codingPath, debugDescription: "无法解析时间 \(text)"))
-        }
-        return decoder
-    }()
 
     /// Accumulates output and completes a request per newline-terminated frame.
     private func consume(_ chunk: Data) {

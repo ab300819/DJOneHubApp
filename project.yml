@@ -30,3 +30,32 @@ targets:
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         GENERATE_INFOPLIST_FILE: "YES"
+
+  # Logic tests only: the bundle is hosted by the app so it can @testable import
+  # the real DTOs rather than a copy of them.
+  DJOneHubTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/ContractDecode
+        excludes: [Fixtures]
+      - path: Tests/ContractDecode/Fixtures
+        type: folder
+    dependencies:
+      - target: DJOneHub
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ab300819.DJOneHubTests
+        GENERATE_INFOPLIST_FILE: "YES"
+
+schemes:
+  DJOneHub:
+    build:
+      targets:
+        DJOneHub: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - DJOneHubTests
