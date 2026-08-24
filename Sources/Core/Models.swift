@@ -177,6 +177,10 @@ struct TrafficSnapshot: Decodable, Sendable {
     let sessionRX: UInt64
     let sessionTX: UInt64
     let sessionTotal: UInt64
+    /// When the core read the counters. A rate derived from the app's own clock
+    /// would charge the round trip to the elapsed time; this is the moment the
+    /// numbers actually describe.
+    let sampledAtMS: Int64
     let error: String?
 
     enum CodingKeys: String, CodingKey {
@@ -186,6 +190,7 @@ struct TrafficSnapshot: Decodable, Sendable {
         case sessionRX = "session_rx_bytes"
         case sessionTX = "session_tx_bytes"
         case sessionTotal = "session_total_bytes"
+        case sampledAtMS = "sampled_at_ms"
     }
 }
 
@@ -295,6 +300,7 @@ struct NetworkDiagnostic: Decodable, Sendable {
     let hostInterfaces: [HostInterface]?
     let defaultRoute: DefaultRoute
     let usbNetworkPresent: Bool
+    let usbDevice: USBDevice?
     let errors: [String: String]?
 
     enum CodingKeys: String, CodingKey {
@@ -306,7 +312,50 @@ struct NetworkDiagnostic: Decodable, Sendable {
         case hostInterfaces = "mac_interfaces"
         case defaultRoute = "default_route"
         case usbNetworkPresent = "usb_network_present"
+        case usbDevice = "usb_device"
     }
+}
+
+/// The module as the USB bus describes it. Carried by the diagnostic rather
+/// than the status, because the status only reports it in the degraded shape —
+/// the reading that is available exactly when the AT channel is not.
+struct USBDevice: Decodable, Sendable {
+    let product: String
+    let vendor: String
+    let vendorID: String
+    let productID: String
+    let locationID: String
+    let speed: String
+    let mode: String
+    let interfaces: [USBInterface]?
+
+    enum CodingKeys: String, CodingKey {
+        case product, vendor, speed, mode, interfaces
+        case vendorID = "vendor_id"
+        case productID = "product_id"
+        case locationID = "location_id"
+    }
+
+    /// The pair that decides whether the host will talk to the module at all.
+    var identifier: String { "\(vendorID):\(productID)" }
+}
+
+/// One interface of the module's current USB composition. Which of these are
+/// present is what a usbnet mode change actually alters.
+struct USBInterface: Decodable, Sendable, Identifiable {
+    let number: Int
+    let interfaceClass: Int
+    let subclass: Int
+    let protocolNumber: Int
+    let endpoints: Int
+
+    enum CodingKeys: String, CodingKey {
+        case number, subclass, endpoints
+        case interfaceClass = "class"
+        case protocolNumber = "protocol"
+    }
+
+    var id: Int { number }
 }
 
 /// An accepted USB composition change; it takes effect after a reboot.
@@ -453,4 +502,71 @@ struct ESIMSwitchResult: Decodable, Sendable {
 struct ESIMActionResult: Decodable, Sendable {
     let demo: Bool
     let message: String?
+}
+
+// MARK: - Module phonebook
+
+/// A note kept in the module's own phonebook, keyed to the profile's ICCID.
+///
+/// This is the one place where a note survives moving the card to another
+/// machine: the module stores it, not the app. That is also what limits it —
+/// the entry is a phonebook record, so the three fields have to fit in one.
+struct ModuleProfileNote: Codable, Sendable, Identifiable {
+    var index: Int = 0
+    var iccid: String
+    var label: String
+    var phone: String
+    var tags: String
+
+    var id: String { iccid }
+
+    /// All three fields blank is how a deletion is expressed on the wire, so
+    /// the UI needs the same test to describe what a save will do.
+    var isEmpty: Bool {
+        [label, phone, tags].allSatisfy {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+}
+
+/// The module phonebook's contents and how full it is.
+struct ModuleNotes: Decodable, Sendable {
+    let notes: [String: ModuleProfileNote]?
+    let used: Int
+    let total: Int
+}
+
+/// A confirmed phonebook write. A deletion carries no index, since there is no
+/// longer a record to point at.
+struct ModuleNoteResult: Decodable, Sendable {
+    let message: String
+    let index: Int?
+}
+
+/// What the module says about its card-side phonebook, gathered by asking
+/// rather than by writing: the probe issues only queries, so a module that
+/// cannot do this is not left with a stray contact.
+struct PhonebookProbe: Decodable, Sendable {
+    let storageSupported: Bool
+    let storageSelected: Bool
+    let readSupported: Bool
+    let writeSupported: Bool
+    let storageStatus: String
+    let responses: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case responses
+        case storageSupported = "storage_supported"
+        case storageSelected = "storage_selected"
+        case readSupported = "read_supported"
+        case writeSupported = "write_supported"
+        case storageStatus = "storage_status"
+    }
+
+    /// Storage that is both present and selectable — without this, the rest of
+    /// the answers describe nothing usable.
+    var storageUsable: Bool { storageSupported && storageSelected }
+
+    /// Whether notes written here would travel with the card.
+    var portable: Bool { storageUsable && readSupported && writeSupported }
 }

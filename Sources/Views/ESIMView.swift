@@ -22,6 +22,14 @@ struct ESIMView: View {
     @State private var confirmingDelete: ProfileRef?
     @State private var showingDownload = false
 
+    /// Notes read from the module's own phonebook, keyed by ICCID. Absent when
+    /// the module has no writable phonebook, which is a capability rather than
+    /// a failure — so it is kept apart from `error`.
+    @State private var notes: ModuleNotes?
+    @State private var editingNote: ModuleProfileNote?
+    @State private var probe: PhonebookProbe?
+    @State private var probing = false
+
     /// Which operation is in flight, so only the affected row is disabled rather
     /// than the whole page.
     private enum Busy: Equatable {
@@ -64,10 +72,13 @@ struct ESIMView: View {
                     ContentUnavailableView(
                         "eSIM 不可用", systemImage: "simcard.2", description: Text(unavailable))
                 }
+            } else if let overview, overview.physicalSIM {
+                physicalSIMSection(overview.message)
             } else {
                 healthSection
                 cardSection
                 profileSections
+                phonebookSection
             }
         }
         .formStyle(.grouped)
@@ -89,6 +100,11 @@ struct ESIMView: View {
         .sheet(isPresented: $showingDownload) {
             DownloadSheet { request in
                 Task { await download(request) }
+            }
+        }
+        .sheet(item: $editingNote) { note in
+            ModuleNoteSheet(note: note) { edited in
+                Task { await saveNote(edited) }
             }
         }
         .alert("重命名 Profile", isPresented: .init(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -142,6 +158,18 @@ struct ESIMView: View {
         }
     }
 
+    /// A module with an ordinary SIM has no eUICC to enumerate. Saying so is
+    /// the whole content of the page in that case; without it the page is blank
+    /// and reads as a failure.
+    @ViewBuilder
+    private func physicalSIMSection(_ message: String?) -> some View {
+        Section {
+            ContentUnavailableView(
+                "这是实体 SIM 卡", systemImage: "simcard",
+                description: Text(message ?? "模块中没有可管理的 eUICC，Profile 操作不适用。"))
+        }
+    }
+
     @ViewBuilder
     private var cardSection: some View {
         if let chip = overview?.card?.chipInfo {
@@ -157,7 +185,7 @@ struct ESIMView: View {
     private var profileSections: some View {
         if let groups = overview?.card?.profiles, !groups.isEmpty {
             ForEach(groups) { group in
-                Section(groups.count > 1 ? "eUICC \(group.aidHex.prefix(16))" : "Profile") {
+                Section {
                     let profiles = group.profiles ?? []
                     if profiles.isEmpty {
                         Text("卡上没有 Profile").foregroundStyle(.secondary)
@@ -165,8 +193,16 @@ struct ESIMView: View {
                         ForEach(profiles) { profile in
                             ProfileRow(
                                 profile: profile,
+                                note: notes?.notes?[profile.iccid],
                                 busy: rowBusy(profile.iccid),
                                 onEnable: { Task { await enable(profile, aid: group.aidHex) } },
+                                onEditNote: notes == nil
+                                    ? nil
+                                    : {
+                                        editingNote = notes?.notes?[profile.iccid]
+                                            ?? ModuleProfileNote(
+                                                iccid: profile.iccid, label: "", phone: "", tags: "")
+                                    },
                                 onRename: {
                                     renameText = profile.name
                                     renaming = profile
@@ -177,11 +213,72 @@ struct ESIMView: View {
                                 })
                         }
                     }
+                } header: {
+                    Text(groups.count > 1 ? "eUICC \(group.aidHex.prefix(16))" : "Profile")
+                } footer: {
+                    if let notes, group.id == groups.last?.id {
+                        Text("模块资料库已用 \(notes.used)/\(notes.total) 条")
+                    }
                 }
             }
         } else if busy == .loading {
             Section { ProgressView("正在读取卡片…") }
         }
+    }
+
+    /// Asks the module what its card-side phonebook can do, using queries
+    /// only. Nothing is written, so running this leaves no contact behind.
+    @ViewBuilder
+    private var phonebookSection: some View {
+        Section {
+            if let probe {
+                CapabilityRow(
+                    title: "SIM 通讯录", ok: probe.storageSupported,
+                    detail: probe.storageSupported ? "支持 SM 卡内存储" : "未发现 SM 卡内存储")
+                CapabilityRow(
+                    title: "选中存储", ok: probe.storageSelected,
+                    detail: probe.storageSelected ? "已选中 SM 存储" : "无法选中 SM 存储")
+                CapabilityRow(
+                    title: "读取能力", ok: probe.readSupported,
+                    detail: probe.readSupported ? "支持读取卡内联系人" : "模块未确认读取命令")
+                CapabilityRow(
+                    title: "写入接口", ok: probe.writeSupported,
+                    detail: probe.writeSupported ? "声明支持写入接口" : "模块未确认写入命令")
+                CapabilityRow(
+                    title: "当前状态", ok: probe.storageUsable,
+                    detail: Self.capacity(probe.storageStatus))
+            }
+            HStack {
+                Button(probe == nil ? "检测" : "重新检测") {
+                    Task { await runProbe() }
+                }
+                .disabled(probing)
+                if probing {
+                    ProgressView().controlSize(.small)
+                }
+            }
+        } header: {
+            Text("卡内通讯录")
+        } footer: {
+            if let probe {
+                Text(
+                    probe.portable
+                        ? "当前 Profile 支持卡内通讯录读写；检测过程没有写入任何联系人。"
+                        : "当前 Profile 未完整确认卡内通讯录读写能力；不会进行写入。")
+            } else {
+                Text("只发送查询命令，不会写入联系人。")
+            }
+        }
+    }
+
+    /// The probe carries the module's raw reply, echo and terminator included.
+    /// Only the `+CPBS:` line says anything, so that is what is shown.
+    private static func capacity(_ status: String) -> String {
+        let line = status
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { $0.hasPrefix("+CPBS:") }
+        return line ?? (status.isEmpty ? "未返回容量信息" : status)
     }
 
     private func rowBusy(_ iccid: String) -> Bool {
@@ -210,6 +307,9 @@ struct ESIMView: View {
         // Health needs the module's registration as well as the card, so it can
         // fail on its own without the card view being wrong.
         health = try? await transport.esimHealth()
+        // A module without a writable phonebook simply cannot hold notes; that
+        // reads as nil here and hides the editor rather than raising an error.
+        notes = try? await transport.moduleNotes()
     }
 
     private func enable(_ profile: ESIMProfile, aid: String) async {
@@ -290,6 +390,33 @@ struct ESIMView: View {
         await reload()
     }
 
+    /// Writes the note into the module's own phonebook. Clearing every field
+    /// deletes the record, which is the only way to remove one.
+    private func saveNote(_ note: ModuleProfileNote) async {
+        guard let transport = model.transport else { return }
+        do {
+            let result = try await transport.saveModuleNote(note)
+            notice = result.message
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+            return
+        }
+        notes = try? await transport.moduleNotes()
+    }
+
+    private func runProbe() async {
+        guard let transport = model.transport else { return }
+        probing = true
+        defer { probing = false }
+        do {
+            probe = try await transport.probePhonebook()
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
     /// The eUICC a profile lives in, needed by operations that only carry an
     /// ICCID from the UI.
     private func aidHolding(_ iccid: String) -> String? {
@@ -304,8 +431,12 @@ struct ESIMView: View {
 /// another profile first.
 private struct ProfileRow: View {
     let profile: ESIMProfile
+    let note: ModuleProfileNote?
     let busy: Bool
     let onEnable: () -> Void
+    /// Nil when the module has no phonebook to write to, which is what removes
+    /// the menu item rather than leaving a control that cannot work.
+    let onEditNote: (() -> Void)?
     let onRename: () -> Void
     let onDelete: () -> Void
 
@@ -324,6 +455,9 @@ private struct ProfileRow: View {
                 }
                 Menu {
                     Button("重命名…", action: onRename)
+                    if let onEditNote {
+                        Button("模块资料…", action: onEditNote)
+                    }
                     Button("删除…", role: .destructive, action: onDelete)
                         .disabled(profile.isEnabled)
                 } label: {
@@ -343,6 +477,92 @@ private struct ProfileRow: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.tertiary)
                     .textSelection(.enabled)
+                if let note, !note.isEmpty {
+                    Text(Self.describe(note))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private static func describe(_ note: ModuleProfileNote) -> String {
+        [note.label, note.phone, note.tags]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+}
+
+/// One answer from the phonebook probe.
+private struct CapabilityRow: View {
+    let title: String
+    let ok: Bool
+    let detail: String
+
+    var body: some View {
+        LabeledContent(title) {
+            Label(detail, systemImage: ok ? "checkmark.circle" : "xmark.circle")
+                .foregroundStyle(ok ? Color.green : Color.orange)
+                .font(.callout)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+}
+
+/// Edits the note the module itself stores for a profile.
+///
+/// Worth the round trip to the module rather than a local file: the record
+/// lives in the module's phonebook, so it is still there when the same card is
+/// read from another machine.
+private struct ModuleNoteSheet: View {
+    let note: ModuleProfileNote
+    let onSubmit: (ModuleProfileNote) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var label: String
+    @State private var phone: String
+    @State private var tags: String
+
+    init(note: ModuleProfileNote, onSubmit: @escaping (ModuleProfileNote) -> Void) {
+        self.note = note
+        self.onSubmit = onSubmit
+        _label = State(initialValue: note.label)
+        _phone = State(initialValue: note.phone)
+        _tags = State(initialValue: note.tags)
+    }
+
+    private var edited: ModuleProfileNote {
+        ModuleProfileNote(
+            index: note.index, iccid: note.iccid,
+            label: label.trimmingCharacters(in: .whitespacesAndNewlines),
+            phone: phone.trimmingCharacters(in: .whitespacesAndNewlines),
+            tags: tags.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("模块内名称", text: $label, prompt: Text("可选"))
+                TextField("模块号码", text: $phone, prompt: Text("可选"))
+                TextField("用途标签", text: $tags, prompt: Text("例如：英国验证码"))
+            } header: {
+                Text("模块资料")
+            } footer: {
+                Text("保存在模块自己的通讯录里，按 ICCID 关联 Profile \(note.iccid)。三项都留空即删除这条记录。")
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 460)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("取消") { dismiss() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button(edited.isEmpty ? "删除" : "保存") {
+                    onSubmit(edited)
+                    dismiss()
+                }
             }
         }
     }

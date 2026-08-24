@@ -169,6 +169,20 @@ final class StdioTransport: ModemTransport, @unchecked Sendable {
         try await call("esim.download", params: request)
     }
 
+    func moduleNotes() async throws -> ModuleNotes {
+        try await call("esim.moduleNotes.list", params: Empty())
+    }
+
+    /// A note with all three fields empty deletes the record, which is how the
+    /// core distinguishes clearing a note from writing a blank one.
+    func saveModuleNote(_ note: ModuleProfileNote) async throws -> ModuleNoteResult {
+        try await call("esim.moduleNotes.save", params: note)
+    }
+
+    func probePhonebook() async throws -> PhonebookProbe {
+        try await call("esim.phonebookProbe", params: Empty())
+    }
+
     // MARK: - Protocol plumbing
 
     /// A card can host more than one eUICC application, so a profile is

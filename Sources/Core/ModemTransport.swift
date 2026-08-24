@@ -34,6 +34,10 @@ protocol ModemTransport: Sendable {
     func esimRename(iccid: String, aid: String?, name: String) async throws -> ESIMActionResult
     func esimDownload(_ request: ESIMDownloadRequest) async throws -> ESIMActionResult
 
+    func moduleNotes() async throws -> ModuleNotes
+    func saveModuleNote(_ note: ModuleProfileNote) async throws -> ModuleNoteResult
+    func probePhonebook() async throws -> PhonebookProbe
+
     /// Events the core pushes without being asked, such as eSIM download
     /// progress. The stream is unbounded in time and finishes when the core
     /// goes away; a page that only cares while it is on screen should iterate

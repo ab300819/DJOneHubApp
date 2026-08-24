@@ -16,6 +16,11 @@ struct NetworkView: View {
     @State private var error: String?
     @State private var notice: String?
 
+    /// The rate has to be derived: the core reports totals, so a rate only
+    /// exists once two samples of the same interface have been seen.
+    @State private var rate: TrafficRate?
+    @State private var lastSample: TrafficSample?
+
     @State private var pendingMode: Int?
     @State private var confirmingReboot = false
 
@@ -29,8 +34,10 @@ struct NetworkView: View {
             trafficSection
             activitySection
             checkSection
+            interfaceSection
             usbnetSection
             moduleSection
+            hardwareSection
         }
         .formStyle(.grouped)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -98,6 +105,14 @@ struct NetworkView: View {
                 LabeledContent(
                     "开机累计",
                     value: "\(ByteCount.describe(traffic.rxBytes)) / \(ByteCount.describe(traffic.txBytes))")
+                LabeledContent("实时速率") {
+                    if let rate {
+                        Text("\(ByteCount.describeRate(rate.rxPerSecond)) ↓  \(ByteCount.describeRate(rate.txPerSecond)) ↑")
+                            .monospacedDigit()
+                    } else {
+                        Text("正在取样…").foregroundStyle(.secondary)
+                    }
+                }
             } else if let message = traffic?.error, !message.isEmpty {
                 Text(message).foregroundStyle(.secondary)
             } else {
@@ -133,6 +148,86 @@ struct NetworkView: View {
                 Text("模块未联网")
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// Every interface the host has, not just the module's. Which name belongs
+    /// to the module is enumeration order on macOS rather than anything about
+    /// the hardware, so seeing the whole list is what makes the one row that
+    /// matters believable.
+    @ViewBuilder
+    private var interfaceSection: some View {
+        if let interfaces = diagnostic?.hostInterfaces, !interfaces.isEmpty {
+            Section("macOS 网络接口") {
+                ForEach(interfaces) { item in
+                    LabeledContent {
+                        Text(item.status == "active" ? "已启用" : "未启用")
+                            .font(.callout)
+                            .foregroundStyle(item.status == "active" ? Color.green : .secondary)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(item.name).monospaced()
+                                if item.name == local?.interface {
+                                    Text("模块")
+                                        .font(.caption2)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background(.tint, in: Capsule())
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            Text([item.kind, item.ipv4].filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// What the USB bus says the module is. This is the reading that decides
+    /// whether the host will talk to it at all, and it survives the AT channel
+    /// being unavailable — so it is worth showing separately from the status.
+    @ViewBuilder
+    private var hardwareSection: some View {
+        if let device = diagnostic?.usbDevice {
+            Section("硬件") {
+                let name = [device.vendor, device.product]
+                    .filter { !$0.isEmpty }.joined(separator: " ")
+                LabeledContent("设备", value: name.isEmpty ? "兼容设备" : name)
+                LabeledContent("USB ID") {
+                    Text(device.identifier).monospaced()
+                }
+                LabeledContent("模式", value: device.mode.isEmpty ? "—" : device.mode)
+                LabeledContent("速率", value: device.speed.isEmpty ? "—" : device.speed)
+                LabeledContent("位置", value: device.locationID.isEmpty ? "—" : device.locationID)
+                let interfaces = device.interfaces ?? []
+                LabeledContent("USB interface", value: "\(interfaces.count) 个")
+                ForEach(interfaces) { item in
+                    LabeledContent("接口 \(item.number)", value: Self.describe(item))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private static func describe(_ item: USBInterface) -> String {
+        "\(usbClassName(item.interfaceClass)) · 子类 \(item.subclass) · 协议 \(item.protocolNumber) · \(item.endpoints) 端点"
+    }
+
+    /// Only the classes this module actually presents; anything else falls back
+    /// to the number so an unexpected composition is still readable.
+    private static func usbClassName(_ value: Int) -> String {
+        switch value {
+        case 2: "通信"
+        case 8: "存储"
+        case 10: "通信数据"
+        case 255: "厂商自定义"
+        default: "class \(value)"
         }
     }
 
@@ -266,10 +361,51 @@ struct NetworkView: View {
             self.local = try await local
             self.activity = try await activity
             self.diagnostic = try await diagnostic
+            updateRate(from: self.traffic)
             error = nil
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    /// Two totals and the interval between them, timed by the core's own sample
+    /// clock. The counters restart whenever the interface is torn down and
+    /// brought back, which would otherwise read as one enormous burst — so a
+    /// sample that went backwards discards the rate rather than reporting it.
+    private func updateRate(from snapshot: TrafficSnapshot?) {
+        guard let snapshot, snapshot.available, let interface = snapshot.interface else {
+            lastSample = nil
+            rate = nil
+            return
+        }
+        let sample = TrafficSample(
+            interface: interface, rx: snapshot.rxBytes, tx: snapshot.txBytes,
+            atMS: snapshot.sampledAtMS)
+        defer { lastSample = sample }
+        guard let previous = lastSample, previous.interface == interface else {
+            rate = nil
+            return
+        }
+        let elapsed = Double(sample.atMS - previous.atMS) / 1000
+        guard elapsed >= 0.5, sample.rx >= previous.rx, sample.tx >= previous.tx else {
+            rate = nil
+            return
+        }
+        rate = TrafficRate(
+            rxPerSecond: Double(sample.rx - previous.rx) / elapsed,
+            txPerSecond: Double(sample.tx - previous.tx) / elapsed)
+    }
+
+    private struct TrafficSample {
+        let interface: String
+        let rx: UInt64
+        let tx: UInt64
+        let atMS: Int64
+    }
+
+    private struct TrafficRate: Equatable {
+        let rxPerSecond: Double
+        let txPerSecond: Double
     }
 
     private func applyUSBNetMode(_ mode: Int) async {
@@ -394,6 +530,10 @@ struct MessageBar: View {
 /// worth making.
 enum ByteCount {
     private static let units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]
+
+    static func describeRate(_ bytesPerSecond: Double) -> String {
+        describe(UInt64(max(0, bytesPerSecond.rounded()))) + "/s"
+    }
 
     static func describe(_ bytes: UInt64) -> String {
         var value = Double(bytes)
