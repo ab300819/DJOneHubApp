@@ -246,7 +246,7 @@ struct ESIMView: View {
                     detail: probe.writeSupported ? "声明支持写入接口" : "模块未确认写入命令")
                 CapabilityRow(
                     title: "当前状态", ok: probe.storageUsable,
-                    detail: Self.capacity(probe.storageStatus))
+                    detail: probe.capacityLine)
             }
             HStack {
                 Button(probe == nil ? "检测" : "重新检测") {
@@ -269,16 +269,6 @@ struct ESIMView: View {
                 Text("只发送查询命令，不会写入联系人。")
             }
         }
-    }
-
-    /// The probe carries the module's raw reply, echo and terminator included.
-    /// Only the `+CPBS:` line says anything, so that is what is shown.
-    private static func capacity(_ status: String) -> String {
-        let line = status
-            .split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { $0.hasPrefix("+CPBS:") }
-        return line ?? (status.isEmpty ? "未返回容量信息" : status)
     }
 
     private func rowBusy(_ iccid: String) -> Bool {

@@ -373,39 +373,7 @@ struct NetworkView: View {
     /// brought back, which would otherwise read as one enormous burst — so a
     /// sample that went backwards discards the rate rather than reporting it.
     private func updateRate(from snapshot: TrafficSnapshot?) {
-        guard let snapshot, snapshot.available, let interface = snapshot.interface else {
-            lastSample = nil
-            rate = nil
-            return
-        }
-        let sample = TrafficSample(
-            interface: interface, rx: snapshot.rxBytes, tx: snapshot.txBytes,
-            atMS: snapshot.sampledAtMS)
-        defer { lastSample = sample }
-        guard let previous = lastSample, previous.interface == interface else {
-            rate = nil
-            return
-        }
-        let elapsed = Double(sample.atMS - previous.atMS) / 1000
-        guard elapsed >= 0.5, sample.rx >= previous.rx, sample.tx >= previous.tx else {
-            rate = nil
-            return
-        }
-        rate = TrafficRate(
-            rxPerSecond: Double(sample.rx - previous.rx) / elapsed,
-            txPerSecond: Double(sample.tx - previous.tx) / elapsed)
-    }
-
-    private struct TrafficSample {
-        let interface: String
-        let rx: UInt64
-        let tx: UInt64
-        let atMS: Int64
-    }
-
-    private struct TrafficRate: Equatable {
-        let rxPerSecond: Double
-        let txPerSecond: Double
+        (lastSample, rate) = TrafficRateDerivation.derive(from: snapshot, previous: lastSample)
     }
 
     private func applyUSBNetMode(_ mode: Int) async {

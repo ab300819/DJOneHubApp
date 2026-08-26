@@ -41,6 +41,7 @@ targets:
         excludes: [Fixtures]
       - path: Tests/ContractDecode/Fixtures
         type: folder
+      - path: Tests/ViewLogic
     dependencies:
       - target: DJOneHub
     settings:

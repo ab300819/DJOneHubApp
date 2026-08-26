@@ -569,4 +569,17 @@ struct PhonebookProbe: Decodable, Sendable {
 
     /// Whether notes written here would travel with the card.
     var portable: Bool { storageUsable && readSupported && writeSupported }
+
+    /// The capacity out of the raw `AT+CPBS?` answer, which arrives with the
+    /// echoed command and its terminator around it. Showing the whole thing
+    /// would put an `OK` on screen next to a number; showing nothing would
+    /// hide that the module answered at all, so an answer that carries no
+    /// `+CPBS:` line is surfaced as-is rather than swallowed.
+    var capacityLine: String {
+        let line = storageStatus
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { $0.hasPrefix("+CPBS:") }
+        return line ?? (storageStatus.isEmpty ? "未返回容量信息" : storageStatus)
+    }
 }
