@@ -18,16 +18,37 @@ struct ReceivedSMS: Decodable, Sendable, Identifiable {
 /// The state of the background polling that feeds the inbox.
 struct SMSStatus: Decodable, Sendable {
     let count: Int
+    /// Everything kept on disk. The list is capped, so this is the number that
+    /// says whether anything is out of view.
+    let stored: Int
     let polling: Bool
     let pollIntervalS: Int
     let autoCleanupME: Bool
     let lastPollError: String
 
     enum CodingKeys: String, CodingKey {
-        case count, polling
+        case count, polling, stored
         case pollIntervalS = "poll_interval_s"
         case autoCleanupME = "auto_cleanup_me"
         case lastPollError = "last_poll_error"
+    }
+
+    /// The one-line summary under the message list.
+    ///
+    /// Reporting the list's own length as the total is the failure this exists
+    /// to avoid: the archive on disk is not capped, so a message scrolled off
+    /// the list is out of view rather than gone, and saying "共 500 条" while
+    /// holding 3000 would read as loss.
+    var summary: String {
+        var parts = stored > count ? ["显示最近 \(count) 条 · 共 \(stored) 条"] : ["共 \(count) 条"]
+        parts.append(polling ? "每 \(pollIntervalS) 秒自动查询" : "未自动查询")
+        if !autoCleanupME {
+            parts.append("保留模块副本")
+        }
+        if !lastPollError.isEmpty {
+            parts.append("上次查询出错：\(lastPollError)")
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

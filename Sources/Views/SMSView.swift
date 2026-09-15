@@ -84,7 +84,7 @@ struct SMSView: View {
         } else if let notice {
             banner(notice, tint: .secondary)
         } else if let status {
-            banner(statusLine(status), tint: .secondary)
+            banner(status.summary, tint: .secondary)
         }
     }
 
@@ -99,15 +99,6 @@ struct SMSView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.bar)
-    }
-
-    private func statusLine(_ status: SMSStatus) -> String {
-        var parts = ["共 \(status.count) 条"]
-        parts.append(status.polling ? "每 \(status.pollIntervalS) 秒自动查询" : "未自动查询")
-        if !status.lastPollError.isEmpty {
-            parts.append("上次查询出错：\(status.lastPollError)")
-        }
-        return parts.joined(separator: " · ")
     }
 
     // MARK: - Actions

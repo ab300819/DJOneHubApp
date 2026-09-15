@@ -25,7 +25,12 @@ final class ContractDecodeTests: XCTestCase {
 
     func testSMSDecode() throws {
         _ = try decode([ReceivedSMS].self, from: "sms.list")
-        _ = try decode(SMSStatus.self, from: "sms.status")
+        let status = try decode(SMSStatus.self, from: "sms.status")
+        // stored is non-optional, so a renamed key fails the decode outright —
+        // but the poll interval is what proves the fixture is a real reading
+        // rather than zeros.
+        XCTAssertEqual(status.pollIntervalS, 8)
+        XCTAssertGreaterThanOrEqual(status.stored, status.count)
     }
 
     func testNetworkDecode() throws {

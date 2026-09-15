@@ -65,6 +65,40 @@ final class PresentationTests: XCTestCase {
         }
     }
 
+    // MARK: - 短信状态摘要
+
+    private func smsStatus(count: Int, stored: Int, autoCleanup: Bool = true,
+                           polling: Bool = true, error: String = "") -> SMSStatus {
+        let json = """
+            {"count":\(count),"stored":\(stored),"polling":\(polling),"poll_interval_s":8,
+             "auto_cleanup_me":\(autoCleanup),"last_poll_error":"\(error)"}
+            """
+        return try! CoreJSON.decoder.decode(SMSStatus.self, from: Data(json.utf8))
+    }
+
+    /// The list is capped and the archive is not, so reporting the list's own
+    /// length as the total would present a cap as loss.
+    func testTheSummarySaysWhenTheListIsShowingOnlyPartOfTheArchive() {
+        XCTAssertTrue(smsStatus(count: 500, stored: 3_214).summary.contains("显示最近 500 条 · 共 3214 条"))
+    }
+
+    func testTheSummaryDropsTheQualifierWhenNothingIsHidden() {
+        let summary = smsStatus(count: 12, stored: 12).summary
+        XCTAssertTrue(summary.contains("共 12 条"))
+        XCTAssertFalse(summary.contains("显示最近"), "没有内容被截断时不该出现「显示最近」")
+    }
+
+    /// Keeping the module's copy changes what a full module means later, so it
+    /// has to be visible rather than inferable only from a launch argument.
+    func testKeepingTheModuleCopyIsVisibleInTheSummary() {
+        XCTAssertTrue(smsStatus(count: 1, stored: 1, autoCleanup: false).summary.contains("保留模块副本"))
+        XCTAssertFalse(smsStatus(count: 1, stored: 1).summary.contains("保留模块副本"))
+    }
+
+    func testAPollErrorIsCarriedIntoTheSummary() {
+        XCTAssertTrue(smsStatus(count: 0, stored: 0, error: "串口已断开").summary.contains("串口已断开"))
+    }
+
     // MARK: - 字节读数
 
     /// Bytes are counted in binary multiples, and the unit has to climb or a
