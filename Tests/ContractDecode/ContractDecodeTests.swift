@@ -98,6 +98,13 @@ final class ContractDecodeTests: XCTestCase {
         XCTAssertFalse(result.message.isEmpty)
     }
 
+    func testOverviewCarriesEachEUICC() throws {
+        let chip = try XCTUnwrap(decode(ESIMOverviewResult.self, from: "esim.overview").card?.chipInfo)
+        let euicc = try XCTUnwrap(chip.eids?.first)
+        XCTAssertFalse(euicc.eid.isEmpty)
+        XCTAssertFalse(euicc.aid.isEmpty)
+    }
+
     func testPhonebookProbeCarriesResponses() throws {
         let probe = try decode(PhonebookProbe.self, from: "esim.phonebookProbe")
         XCTAssertFalse(try XCTUnwrap(probe.responses).isEmpty)

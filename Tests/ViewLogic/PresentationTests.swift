@@ -99,6 +99,44 @@ final class PresentationTests: XCTestCase {
         XCTAssertTrue(smsStatus(count: 0, stored: 0, error: "串口已断开").summary.contains("串口已断开"))
     }
 
+    // MARK: - 标识打码
+
+    /// The ends stay readable so two profiles can still be told apart at a
+    /// glance; the middle is what a screenshot should not carry.
+    func testAnICCIDKeepsItsEndsAndHidesItsMiddle() {
+        XCTAssertEqual(Identifier.masked("89860123456789012345"), "8986 •••••••••••• 2345")
+    }
+
+    /// However little is hidden, at least four dots show, so a masked value
+    /// never reads as a short complete one.
+    func testAtLeastFourDotsShowWhenMasking() {
+        XCTAssertEqual(Identifier.masked("123456789"), "1234 •••• 6789")
+    }
+
+    /// Masking a value no longer than the two ends would hide nothing and only
+    /// mangle it.
+    func testAShortValueIsShownWhole() {
+        XCTAssertEqual(Identifier.masked("12345678"), "12345678")
+        XCTAssertEqual(Identifier.masked(""), "")
+    }
+
+    // MARK: - eUICC
+
+    private func euicc(spec: String?, guess: String?) -> ESIMEUICC {
+        var fields = [#""aid":"A000","eid":"8904""#]
+        if let spec { fields.append(#""spec":"\#(spec)""#) }
+        if let guess { fields.append(#""spec_guess":"\#(guess)""#) }
+        let json = "{\(fields.joined(separator: ","))}"
+        return try! CoreJSON.decoder.decode(ESIMEUICC.self, from: Data(json.utf8))
+    }
+
+    /// A read spec beats a guessed one; an empty one counts as unread.
+    func testTheSpecPrefersWhatWasReadOverWhatWasGuessed() {
+        XCTAssertEqual(euicc(spec: "sgp22", guess: "sgp32").specLabel, "sgp22")
+        XCTAssertEqual(euicc(spec: "", guess: "sgp32").specLabel, "sgp32")
+        XCTAssertEqual(euicc(spec: nil, guess: nil).specLabel, "eSIM")
+    }
+
     // MARK: - 字节读数
 
     /// Bytes are counted in binary multiples, and the unit has to climb or a

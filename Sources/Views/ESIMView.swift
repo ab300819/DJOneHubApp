@@ -98,7 +98,7 @@ struct ESIMView: View {
             }
         }
         .sheet(isPresented: $showingDownload) {
-            DownloadSheet { request in
+            DownloadSheet(euiccs: overview?.card?.chipInfo?.eids ?? []) { request in
                 Task { await download(request) }
             }
         }
@@ -145,8 +145,9 @@ struct ESIMView: View {
         if let health, !health.physicalSIM {
             Section("当前使用") {
                 if let active = health.activeProfile {
-                    LabeledContent("Profile", value: active.name.isEmpty ? active.iccid : active.name)
-                    LabeledContent("ICCID", value: active.iccid)
+                    LabeledContent(
+                        "Profile", value: active.name.isEmpty ? Identifier.masked(active.iccid) : active.name)
+                    LabeledContent("ICCID") { IdentifierText(value: active.iccid) }
                 }
                 LabeledContent("运营商", value: health.operatorName ?? "—")
                 LabeledContent("注册状态", value: health.registration ?? "—")
@@ -177,6 +178,11 @@ struct ESIMView: View {
                 LabeledContent("型号", value: chip.skuName ?? "—")
                 LabeledContent("序列号", value: chip.serialNumber ?? "—")
                 LabeledContent("固件", value: chip.firmware ?? "—")
+            }
+            if let euiccs = chip.eids, !euiccs.isEmpty {
+                Section(euiccs.count > 1 ? "已识别 eUICC（\(euiccs.count) 个）" : "已识别 eUICC") {
+                    ForEach(euiccs) { EUICCRow(euicc: $0) }
+                }
             }
         }
     }
@@ -460,13 +466,14 @@ private struct ProfileRow: View {
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile.name.isEmpty ? "未命名" : profile.name)
-                Text(profile.serviceProviderName.isEmpty ? profile.iccid : profile.serviceProviderName)
+                if !profile.serviceProviderName.isEmpty {
+                    Text(profile.serviceProviderName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                IdentifierText(value: profile.iccid)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(profile.iccid)
-                    .font(.caption.monospacedDigit())
                     .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
                 if let note, !note.isEmpty {
                     Text(Self.describe(note))
                         .font(.caption)
@@ -561,6 +568,9 @@ private struct ModuleNoteSheet: View {
 /// Collects what an SM-DP+ needs. The activation code carries the server and the
 /// matching id together, so pasting one fills both.
 private struct DownloadSheet: View {
+    /// With more than one eUICC on the card the target has to be chosen; left
+    /// empty, the core picks.
+    let euiccs: [ESIMEUICC]
     let onSubmit: (ESIMDownloadRequest) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -568,6 +578,7 @@ private struct DownloadSheet: View {
     @State private var smdp = ""
     @State private var matchingID = ""
     @State private var confirmationCode = ""
+    @State private var aid = ""
 
     var body: some View {
         Form {
@@ -582,6 +593,12 @@ private struct DownloadSheet: View {
                 TextField("SM-DP+ 地址", text: $smdp)
                 TextField("Matching ID", text: $matchingID)
                 TextField("确认码（可留空）", text: $confirmationCode)
+                if euiccs.count > 1 {
+                    Picker("目标 eUICC", selection: $aid) {
+                        Text("自动").tag("")
+                        ForEach(euiccs) { Text("\($0.aid) · EID \(Identifier.masked($0.eid))").tag($0.aid) }
+                    }
+                }
             }
         }
         .formStyle(.grouped)
@@ -597,7 +614,8 @@ private struct DownloadSheet: View {
                             smdp: smdp.trimmingCharacters(in: .whitespacesAndNewlines),
                             matchingID: matchingID.trimmingCharacters(in: .whitespacesAndNewlines),
                             confirmationCode: confirmationCode.trimmingCharacters(
-                                in: .whitespacesAndNewlines)))
+                                in: .whitespacesAndNewlines),
+                            aid: aid))
                     dismiss()
                 }
                 .disabled(smdp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -616,5 +634,70 @@ private struct DownloadSheet: View {
         if parts.count >= 5, !parts[4].isEmpty {
             confirmationCode = parts[4]
         }
+    }
+}
+
+/// One eUICC application, with what the card reports about it.
+private struct EUICCRow: View {
+    let euicc: ESIMEUICC
+
+    var body: some View {
+        LabeledContent {
+            Text(euicc.specLabel).foregroundStyle(.secondary)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("EID \(euicc.eid)")
+                    .font(.callout.monospacedDigit())
+                    .textSelection(.enabled)
+                Text(
+                    [("AID", euicc.aid), ("可用空间", euicc.freeNvram), ("固件", euicc.firmware)]
+                        .compactMap { label, value in
+                            value.flatMap { $0.isEmpty ? nil : "\(label) \($0)" }
+                        }
+                        .joined(separator: " · ")
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            }
+        }
+    }
+}
+
+/// An identifier shown masked by default, with a toggle to reveal it and a
+/// button that copies the full value either way.
+private struct IdentifierText: View {
+    let value: String
+    @State private var revealed = false
+    @State private var copied = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(revealed ? value : Identifier.masked(value))
+                .monospacedDigit()
+                .textSelection(.enabled)
+            Button(revealed ? "隐藏" : "显示") { revealed.toggle() }
+            Button(copied ? "已复制" : "复制") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(value, forType: .string)
+                copied = true
+            }
+        }
+        .buttonStyle(.link)
+        .task(id: copied) {
+            guard copied else { return }
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
+        }
+    }
+}
+
+/// Masks the middle of an identifier such as an ICCID, so a screenshot does
+/// not carry it whole while the ends still tell two apart.
+enum Identifier {
+    static func masked(_ value: String, keep: Int = 4) -> String {
+        guard value.count > keep * 2 else { return value }
+        let dots = String(repeating: "•", count: max(4, value.count - keep * 2))
+        return "\(value.prefix(keep)) \(dots) \(value.suffix(keep))"
     }
 }

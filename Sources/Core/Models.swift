@@ -439,11 +439,36 @@ struct ESIMChipInfo: Decodable, Sendable {
     let skuName: String?
     let serialNumber: String?
     let firmware: String?
+    let eids: [ESIMEUICC]?
 
     enum CodingKeys: String, CodingKey {
         case skuName = "sku_name"
         case serialNumber = "serial_number"
-        case firmware
+        case firmware, eids
+    }
+}
+
+/// One eUICC application on the card. Its AID is what download, switch and
+/// delete need to target it when the card hosts more than one.
+struct ESIMEUICC: Decodable, Sendable, Identifiable {
+    let aid: String
+    let eid: String
+    let spec: String?
+    let specGuess: String?
+    let freeNvram: String?
+    let firmware: String?
+
+    enum CodingKeys: String, CodingKey {
+        case aid, eid, spec, firmware
+        case specGuess = "spec_guess"
+        case freeNvram = "free_nvram"
+    }
+
+    var id: String { aid }
+
+    /// The spec read from the card when there is one, else the core's guess.
+    var specLabel: String {
+        [spec, specGuess].compactMap { $0 }.first { !$0.isEmpty } ?? "eSIM"
     }
 }
 
