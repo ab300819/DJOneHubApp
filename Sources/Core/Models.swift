@@ -1,18 +1,45 @@
 import Foundation
 
-/// One message read from the module.
+/// One message in the history, received or sent. For a sent one `sender` holds
+/// the recipient, so either way it names the other party.
 struct ReceivedSMS: Decodable, Sendable, Identifiable {
     let sender: String
     let content: String
     let code: String?
     let timestamp: Date
+    /// Absent on received messages, including history written before sent
+    /// ones were kept.
+    let outgoing: Bool?
+
+    var isOutgoing: Bool { outgoing ?? false }
 
     /// The core assigns no message identifier, so identity is the full triple
     /// that distinguishes one message from another. Hashing the content would
     /// be shorter but `hashValue` is seeded per process and is not meant to
     /// carry identity; two messages that only differ past a collision would
     /// then render as one row.
-    var id: String { "\(timestamp.timeIntervalSince1970)|\(sender)|\(content)" }
+    var id: String { "\(isOutgoing ? ">" : "")\(timestamp.timeIntervalSince1970)|\(sender)|\(content)" }
+}
+
+/// Every message exchanged with one number, oldest first.
+struct SMSConversation: Identifiable, Sendable {
+    let peer: String
+    let messages: [ReceivedSMS]
+
+    var id: String { peer }
+    var latest: ReceivedSMS? { messages.last }
+
+    /// The newest code someone sent us, which is the one being waited for.
+    var latestCode: String? {
+        messages.last { !$0.isOutgoing && !($0.code ?? "").isEmpty }?.code
+    }
+
+    /// Threads ordered by their latest message, newest first.
+    static func group(_ messages: [ReceivedSMS]) -> [SMSConversation] {
+        Dictionary(grouping: messages, by: \.sender)
+            .map { SMSConversation(peer: $0.key, messages: $0.value.sorted { $0.timestamp < $1.timestamp }) }
+            .sorted { ($0.latest?.timestamp ?? .distantPast) > ($1.latest?.timestamp ?? .distantPast) }
+    }
 }
 
 /// The state of the background polling that feeds the inbox.

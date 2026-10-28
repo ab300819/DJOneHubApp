@@ -99,6 +99,48 @@ final class PresentationTests: XCTestCase {
         XCTAssertTrue(smsStatus(count: 0, stored: 0, error: "串口已断开").summary.contains("串口已断开"))
     }
 
+    // MARK: - 短信会话
+
+    private func sms(_ peer: String, _ text: String, at minute: Int, code: String? = nil,
+                     outgoing: Bool = false) -> ReceivedSMS {
+        let fields: [String: Any?] = [
+            "sender": peer, "content": text, "code": code, "outgoing": outgoing ? true : nil,
+            "timestamp": String(format: "2026-10-28T10:%02d:00Z", minute),
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: fields.compactMapValues { $0 })
+        return try! CoreJSON.decoder.decode(ReceivedSMS.self, from: data)
+    }
+
+    /// One thread per number, with what we sent and what came back together,
+    /// read top to bottom in the order it happened.
+    func testMessagesAreThreadedByNumberInTimeOrder() {
+        let threads = SMSConversation.group([
+            sms("10086", "余额不足", at: 3),
+            sms("10086", "CXYE", at: 2, outgoing: true),
+            sms("+447400123456", "hi", at: 1),
+        ])
+        XCTAssertEqual(threads.map(\.peer), ["10086", "+447400123456"], "最近有动静的会话在前")
+        XCTAssertEqual(threads[0].messages.map(\.content), ["CXYE", "余额不足"])
+        XCTAssertEqual(threads[0].messages.map(\.isOutgoing), [true, false])
+    }
+
+    /// The badge on a thread is the newest code someone sent us, so an older
+    /// code never shadows the one being waited for.
+    func testAThreadOffersTheNewestReceivedCode() {
+        let thread = SMSConversation.group([
+            sms("bank", "old 111111", at: 1, code: "111111"),
+            sms("bank", "new 222222", at: 2, code: "222222"),
+            sms("bank", "thanks", at: 3, outgoing: true),
+        ])[0]
+        XCTAssertEqual(thread.latestCode, "222222")
+        XCTAssertEqual(thread.latest?.content, "thanks", "预览取最新一条，不论方向")
+    }
+
+    /// A history written before direction existed decodes as received.
+    func testAMessageWithoutDirectionIsReceived() {
+        XCTAssertFalse(sms("10086", "x", at: 1).isOutgoing)
+    }
+
     // MARK: - 标识打码
 
     /// The ends stay readable so two profiles can still be told apart at a
