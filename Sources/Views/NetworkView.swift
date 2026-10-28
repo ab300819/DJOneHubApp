@@ -40,7 +40,7 @@ struct NetworkView: View {
             hardwareSection
         }
         .formStyle(.grouped)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .safeAreaBar(edge: .bottom, spacing: 0) {
             if let error {
                 MessageBar(text: error, tint: .red)
             } else if let notice {
@@ -486,7 +486,6 @@ struct MessageBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(.bar)
     }
 }
 

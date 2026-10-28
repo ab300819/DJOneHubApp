@@ -112,6 +112,19 @@ final class ContractDecodeTests: XCTestCase {
         XCTAssertTrue(probe.portable)
     }
 
+    /// Go drops the fraction when it is zero, so both spellings arrive and
+    /// must name the same instant whatever the offset.
+    func testTimestampsParseWithAndWithoutAFraction() throws {
+        struct Stamp: Decodable { let t: Date }
+        func parse(_ text: String) throws -> Date {
+            try CoreJSON.decoder.decode(Stamp.self, from: Data(#"{"t":"\#(text)"}"#.utf8)).t
+        }
+        let whole = try parse("2026-08-24T12:01:32+08:00")
+        XCTAssertEqual(whole, try parse("2026-08-24T04:01:32Z"))
+        XCTAssertEqual(try parse("2026-08-24T12:01:32.25+08:00").timeIntervalSince(whole), 0.25, accuracy: 0.001)
+        XCTAssertThrowsError(try parse("yesterday"))
+    }
+
     // MARK: - AC-122 方法可以合法地答 null
 
     func testAbsentPayloadIsNotADecodingFailure() throws {

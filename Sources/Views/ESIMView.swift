@@ -90,7 +90,7 @@ struct ESIMView: View {
             }
             .disabled(unavailable != nil || busy != nil)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .safeAreaBar(edge: .bottom, spacing: 0) {
             if let error {
                 MessageBar(text: error, tint: .red)
             } else if let notice {

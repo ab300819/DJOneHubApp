@@ -65,7 +65,7 @@ struct SMSView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     }
 
     @ViewBuilder
@@ -135,7 +135,6 @@ struct SMSView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.bar)
     }
 
     // MARK: - Actions
@@ -244,9 +243,9 @@ private struct CodeChip: View {
         } label: {
             Label(copied ? "已复制" : code, systemImage: copied ? "checkmark" : "doc.on.doc")
                 .font(.system(.callout, design: .monospaced).weight(.semibold))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 5))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .glassEffect(.regular.tint(.accentColor.opacity(0.25)).interactive(), in: .capsule)
         }
         .buttonStyle(.plain)
         .help("复制验证码")
@@ -264,22 +263,19 @@ private struct ThreadView: View {
     let onSend: (String) async -> Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(conversation.messages) { Bubble(message: $0).id($0.id) }
-                    }
-                    .padding(16)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    ForEach(conversation.messages) { Bubble(message: $0).id($0.id) }
                 }
-                .defaultScrollAnchor(.bottom)
-                .onChange(of: conversation.latest?.id) { _, id in
-                    if let id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
-                }
+                .padding(16)
             }
-            Divider()
-            Composer(busy: busy, onSend: onSend)
+            .defaultScrollAnchor(.bottom)
+            .onChange(of: conversation.latest?.id) { _, id in
+                if let id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+            }
         }
+        .safeAreaBar(edge: .bottom) { Composer(busy: busy, onSend: onSend) }
         .navigationSubtitle(conversation.peer)
     }
 }
@@ -325,22 +321,25 @@ private struct Composer: View {
     }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            TextField("短信", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...6)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.background, in: RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator))
-                .onSubmit(submit)
-            Button(action: submit) {
-                Image(systemName: "arrow.up.circle.fill").font(.title2)
+        GlassEffectContainer(spacing: 8) {
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("短信", text: $text, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...6)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .glassEffect(in: .rect(cornerRadius: 16))
+                    .onSubmit(submit)
+                Button(action: submit) {
+                    Image(systemName: "arrow.up")
+                        .fontWeight(.semibold)
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .disabled(!sendable)
+                .help("发送")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(sendable ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
-            .disabled(!sendable)
-            .help("发送")
         }
         .padding(12)
     }
@@ -361,21 +360,35 @@ private struct NewThreadView: View {
     @State private var phone = ""
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("收件人：").foregroundStyle(.secondary)
-                TextField("号码，国际号码请写 +86138…", text: $phone)
-                    .textFieldStyle(.plain)
+        Color.clear
+            .safeAreaBar(edge: .top) {
+                HStack {
+                    Text("收件人：").foregroundStyle(.secondary)
+                    TextField("号码，国际号码请写 +86138…", text: $phone)
+                        .textFieldStyle(.plain)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .glassEffect(in: .capsule)
+                .padding(12)
             }
-            .padding(12)
-            Divider()
-            Spacer()
-            Divider()
-            Composer(busy: busy) { text in
-                let number = phone.trimmingCharacters(in: .whitespaces)
-                guard !number.isEmpty else { return false }
-                return await onSend(number, text)
+            .safeAreaBar(edge: .bottom) {
+                Composer(busy: busy) { text in
+                    let number = phone.trimmingCharacters(in: .whitespaces)
+                    guard !number.isEmpty else { return false }
+                    return await onSend(number, text)
+                }
             }
-        }
     }
+}
+
+#Preview("会话") {
+    let json = #"""
+        [{"sender":"10086","content":"CXLL","timestamp":"2026-10-28T10:00:00Z","outgoing":true},
+         {"sender":"10086","content":"【DJOneHub 演示】本月套餐剩余流量 18.6GB。","timestamp":"2026-10-28T10:01:00Z"},
+         {"sender":"10086","content":"您的验证码是 482913，10 分钟内有效。","code":"482913","timestamp":"2026-10-28T10:05:00Z"}]
+        """#
+    let messages = try! CoreJSON.decoder.decode([ReceivedSMS].self, from: Data(json.utf8))
+    ThreadView(conversation: SMSConversation.group(messages)[0], busy: false) { _ in true }
+        .frame(width: 560, height: 420)
 }

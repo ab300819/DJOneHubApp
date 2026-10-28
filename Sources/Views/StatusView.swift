@@ -15,7 +15,7 @@ struct StatusView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .safeAreaBar(edge: .bottom, spacing: 0) {
             if let error = model.lastError {
                 HStack {
                     Text(error)
@@ -25,7 +25,6 @@ struct StatusView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(.bar)
             }
         }
     }

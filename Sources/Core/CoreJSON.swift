@@ -10,15 +10,15 @@ enum CoreJSON {
     /// Go emits RFC 3339 with fractional seconds, which `.iso8601` rejects, and
     /// omits them when they happen to be zero — so both spellings must parse.
     static let decoder: JSONDecoder = {
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
+        // Format styles rather than ISO8601DateFormatter: they are Sendable, so
+        // the decoding closure can hold them under strict concurrency.
+        let withFraction = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+        let plain = Date.ISO8601FormatStyle()
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let text = try decoder.singleValueContainer().decode(String.self)
-            if let date = withFraction.date(from: text) ?? plain.date(from: text) {
+            if let date = (try? withFraction.parse(text)) ?? (try? plain.parse(text)) {
                 return date
             }
             throw DecodingError.dataCorrupted(
