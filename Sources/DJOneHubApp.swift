@@ -8,7 +8,7 @@ struct DJOneHubApp: App {
     var body: some Scene {
         // One window: each window would otherwise start its own core, and two
         // cores contend for the one module.
-        Window("DJOneHub", id: "main") {
+        Window("DJI 4G Module", id: "main") {
             RootView()
                 .environment(model)
                 .task {

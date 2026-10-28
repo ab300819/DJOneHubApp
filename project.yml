@@ -27,6 +27,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ab300819.DJOneHub
+        # The name people see; the module keeps its old name so the tests'
+        # @testable import, and the bundle id with its saved state, stay put.
+        PRODUCT_NAME: DJI 4G Module
+        PRODUCT_MODULE_NAME: DJOneHub
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         GENERATE_INFOPLIST_FILE: "YES"
@@ -47,6 +51,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ab300819.DJOneHubTests
+        # xcodegen derives the host from the target name, not the product name.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/DJI 4G Module.app/Contents/MacOS/DJI 4G Module"
         GENERATE_INFOPLIST_FILE: "YES"
 
 schemes:

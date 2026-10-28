@@ -1,7 +1,8 @@
 .DEFAULT_GOAL := help
 
 CONFIG    ?= Debug
-PRODUCT   := build/Build/Products/$(CONFIG)/DJOneHub.app
+APP_NAME  := DJI 4G Module
+PRODUCT   := build/Build/Products/$(CONFIG)/$(APP_NAME).app
 
 .PHONY: help
 help: ## 列出可用目标
@@ -21,11 +22,11 @@ build: project ## 构建 App
 
 .PHONY: run
 run: build ## 构建并运行（接真实模块）
-	"$(PRODUCT)/Contents/MacOS/DJOneHub"
+	"$(PRODUCT)/Contents/MacOS/$(APP_NAME)"
 
 .PHONY: demo
 demo: build ## 构建并以演示数据运行，无需硬件
-	DJONEHUB_DEMO=1 "$(PRODUCT)/Contents/MacOS/DJOneHub"
+	DJONEHUB_DEMO=1 "$(PRODUCT)/Contents/MacOS/$(APP_NAME)"
 
 .PHONY: test
 test: project ## 跑契约解码测试（IT-011 IT-012）
