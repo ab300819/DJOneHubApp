@@ -38,7 +38,10 @@ App 把核心作为子进程拉起，通过它自己的 stdin/stdout 交换行�
 brew install xcodegen
 make demo   # 演示数据，无需硬件
 make run    # 接真实模块
+make dmg    # 打包 arm64 dmg：Release 构建 + 平级 DJOneHub 的发行版核心，ad-hoc 签名
 ```
+
+dmg 未经公证，在别的机器上首次打开需右键「打开」。
 
 `.xcodeproj` 由 `project.yml` 生成，不纳入版本管理，因此工程配置始终以可读文本形式 review。
 

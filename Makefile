@@ -33,6 +33,10 @@ test: project ## 跑契约解码测试（IT-011 IT-012）
 	xcodebuild -project DJOneHub.xcodeproj -scheme DJOneHub \
 		-configuration $(CONFIG) -derivedDataPath build test
 
+.PHONY: dmg
+dmg: ## 打包 arm64 dmg（Release + 平级 DJOneHub 的发行版核心，ad-hoc 签名）
+	./scripts/package-dmg.sh
+
 .PHONY: mutation
 mutation: ## 注入 DTO 漂移，验证测试真的会失败（IT-013）
 	python3 Tests/ContractDecode/mutation-check.py
