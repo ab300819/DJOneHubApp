@@ -71,6 +71,7 @@ struct ESIMView: View {
                 Section {
                     ContentUnavailableView(
                         "eSIM 不可用", systemImage: "simcard.2", description: Text(unavailable))
+                    .frame(maxWidth: .infinity)
                 }
             } else if let overview, overview.physicalSIM {
                 physicalSIMSection(overview.message)
@@ -168,6 +169,8 @@ struct ESIMView: View {
             ContentUnavailableView(
                 "这是实体 SIM 卡", systemImage: "simcard",
                 description: Text(message ?? "模块中没有可管理的 eUICC，Profile 操作不适用。"))
+            // A grouped Form lays a lone view out in its label column; claim the whole row.
+            .frame(maxWidth: .infinity)
         }
     }
 
