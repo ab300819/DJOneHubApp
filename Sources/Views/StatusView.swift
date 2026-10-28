@@ -48,8 +48,10 @@ struct StatusView: View {
                 LabeledContent("注册状态", value: status.regStatusText)
                 LabeledContent("制式", value: "\(status.networkMode) \(status.networkDuplex)")
                 LabeledContent("频段", value: status.radioBand.isEmpty ? "—" : status.radioBand)
-                LabeledContent("信号", value: "\(status.signalDBm) dBm")
-                LabeledContent("RSRP / RSRQ", value: "\(status.signalRSRP) / \(status.signalRSRQ)")
+                LabeledContent("信号", value: SignalReading.describe(status.signalDBm, unit: "dBm"))
+                LabeledContent(
+                    "RSRP / RSRQ",
+                    value: "\(SignalReading.describe(status.signalRSRP, unit: "dBm")) / \(SignalReading.describe(status.signalRSRQ, unit: "dB"))")
             }
         }
         .formStyle(.grouped)
@@ -77,5 +79,13 @@ private struct DegradedView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// The core reports a reading it could not take as 0, which no real signal
+/// figure ever is, so 0 is shown as unknown rather than as a measurement.
+enum SignalReading {
+    static func describe(_ value: Int, unit: String) -> String {
+        value == 0 ? "—" : "\(value) \(unit)"
     }
 }

@@ -211,4 +211,15 @@ final class PresentationTests: XCTestCase {
         XCTAssertEqual(ByteCount.describeRate(-4096), "0 B/s")
         XCTAssertEqual(ByteCount.describeRate(2048), "2.00 KiB/s")
     }
+
+    // MARK: - 信号读数
+
+    /// The core leaves a reading it never got at 0, and no real RSSI, RSRP or
+    /// RSRQ is 0. The status page printed "0 / 0" for RSRP / RSRQ as though
+    /// the module had measured it.
+    func testSignalReadingTreatsZeroAsUnknown() {
+        XCTAssertEqual(SignalReading.describe(0, unit: "dBm"), "—")
+        XCTAssertEqual(SignalReading.describe(-82, unit: "dBm"), "-82 dBm")
+        XCTAssertEqual(SignalReading.describe(-11, unit: "dB"), "-11 dB")
+    }
 }
