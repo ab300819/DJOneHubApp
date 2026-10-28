@@ -6,7 +6,9 @@ struct DJOneHubApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        WindowGroup("DJOneHub") {
+        // One window: each window would otherwise start its own core, and two
+        // cores contend for the one module.
+        Window("DJOneHub", id: "main") {
             RootView()
                 .environment(model)
                 .task {

@@ -78,18 +78,28 @@ extension ModemTransport {
     /// Polls until the core answers or the deadline passes. Readiness is a
     /// property of the connection rather than of how the core was launched, so
     /// it lives here rather than alongside the process handling.
+    /// The deadline covers the attempt in flight too, so a core that started
+    /// but never answers fails startup rather than holding it open.
     func waitUntilReady(timeout: TimeInterval = 15) async throws -> Health {
-        let deadline = Date().addingTimeInterval(timeout)
-        var lastError: Error?
-        while Date() < deadline {
-            do {
-                return try await health()
-            } catch {
-                lastError = error
-                try? await Task.sleep(nanoseconds: 300_000_000)
+        try await withThrowingTaskGroup(of: Health.self) { group in
+            group.addTask {
+                while true {
+                    do {
+                        return try await health()
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        try await Task.sleep(for: .milliseconds(300))
+                    }
+                }
             }
+            group.addTask {
+                try await Task.sleep(for: .seconds(timeout))
+                throw TransportError.coreUnavailable("核心 \(Int(timeout)) 秒内没有响应")
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
         }
-        throw TransportError.coreUnavailable(lastError?.localizedDescription ?? "启动超时")
     }
 }
 

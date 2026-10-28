@@ -223,14 +223,28 @@ final class StdioTransport: ModemTransport, @unchecked Sendable {
         var line = try JSONSerialization.data(withJSONObject: object)
         line.append(0x0A)
 
-        return try await withCheckedThrowingContinuation { continuation in
-            lock.withLock { pending[id] = continuation }
-            do {
-                try toCore.fileHandleForWriting.write(contentsOf: line)
-            } catch {
-                if let waiting = lock.withLock({ pending.removeValue(forKey: id) }) {
-                    waiting.resume(throwing: TransportError.coreUnavailable(error.localizedDescription))
+        // Cancellation has to reach the waiter, or a caller with a deadline
+        // still waits for an answer that a stuck core will never send.
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.withLock { pending[id] = continuation }
+                // Cancelled before the waiter was registered: the handler below
+                // already ran and found nothing to resume.
+                if Task.isCancelled, let waiting = lock.withLock({ pending.removeValue(forKey: id) }) {
+                    waiting.resume(throwing: CancellationError())
+                    return
                 }
+                do {
+                    try toCore.fileHandleForWriting.write(contentsOf: line)
+                } catch {
+                    if let waiting = lock.withLock({ pending.removeValue(forKey: id) }) {
+                        waiting.resume(throwing: TransportError.coreUnavailable(error.localizedDescription))
+                    }
+                }
+            }
+        } onCancel: {
+            if let waiting = lock.withLock({ pending.removeValue(forKey: id) }) {
+                waiting.resume(throwing: CancellationError())
             }
         }
     }
