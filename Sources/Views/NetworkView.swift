@@ -132,7 +132,9 @@ struct NetworkView: View {
                     let physical = activity.physicalInterface,
                     tunnel != physical
                 {
-                    Text("流量经隧道 \(tunnel) 转发，以下连接读自该接口")
+                    // Which interface the tunnel itself leaves by is not checked, so
+                    // the list is only what rides the tunnel, not proven 4G traffic.
+                    Text("默认出口是隧道 \(tunnel)，以下为该隧道上的连接，不一定经 4G 模块")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
